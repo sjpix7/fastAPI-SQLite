@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlmodel import Session, select, func
 from model import Review, ReviewCreate, ReviewRead, ReviewUpdate
 from database import get_session
@@ -21,13 +21,51 @@ def list_reviews(
     session: Session = Depends(get_session)
 ):
     query = select(Review)
-    print("original query : ", query)
     if play_name:
         query = query.where(Review.play_name == play_name)
-    print("after filtering query : ", query)
     query = query.offset(skip).limit(limit)
-    print("after offset limit query : ", query)
     reviews = session.exec(query).all()
-    print("after exec query : ", reviews)
     return reviews
     
+@router.get("/average/{play_name}")
+def get_average_rating(play_name: str, session:Session = Depends(get_session)):
+    result = session.exec(
+        select(func.avg(Review.rating), func.count(Review.id)).where(
+            Review.play_name == play_name
+        )
+    ).first()
+
+    avg_rating, total_reviews = result
+
+    if total_reviews == 0:
+        raise HTTPException(status_code=404, detail="No reviews found for this play")
+
+    return {
+        "play_name": play_name,
+        "average_rating": avg_rating,
+        "total_reviews": total_reviews
+    }
+
+@router.get("/{review_id}", response_model=ReviewRead)
+def get_review(review_id: int, session: Session = Depends(get_session)):
+    review = session.get(Review, review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return review
+
+@router.patch("/{review_id}", response_model=ReviewRead)
+def update_review(
+    review_id: int,
+    review: ReviewUpdate,
+    session: Session = Depends(get_session)
+):
+    db_review = session.get(Review, review_id)
+    if not db_review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    update_data = review.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_review, key, value)
+    session.add(db_review)
+    session.commit()
+    session.refresh(db_review)
+    return db_review
