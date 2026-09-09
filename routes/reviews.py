@@ -69,3 +69,12 @@ def update_review(
     session.commit()
     session.refresh(db_review)
     return db_review
+
+@router.delete("/{review_id}")
+def delete_review(review_id: int, session: Session = Depends(get_session)):
+    db_review = session.get(Review, review_id)
+    if not db_review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    session.delete(db_review)
+    session.commit()
+    return {"message": "Review deleted successfully"}
